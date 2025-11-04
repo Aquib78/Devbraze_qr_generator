@@ -44,7 +44,8 @@ TEXT_MUTED    = "#4b5563"  # gray-600
 CHIP_BORDER   = "#d1d5db"  # gray-300
 
 # Optional logo (PNG/JPG). Use a raw string or forward slashes on Windows.
-LOGO_PATH     = r"C:\Users\exion\OneDrive\Desktop\LOGOS\DevBraze Logo Blue Border.png"  # or None
+LOGO_PATH = os.path.join("assets", "devbraze_logo.png")
+ # or None
 # =====================
 
 ADDED_COLS = ["Token", "Entry Confirmed", "Check-in Time"]
