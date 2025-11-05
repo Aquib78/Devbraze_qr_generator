@@ -1,7 +1,8 @@
 # scanner.py
 # Simple camera-based scanner + check-in API for token-only QR tickets.
-# Usage:
-#   pip install flask openpyxl filelock
+# Minimal deploy (no PWA icons/manifest). Works locally and on Render.
+# Usage locally:
+#   pip install -r requirements.txt
 #   python scanner.py
 # Open http://localhost:5000/scanner
 
@@ -14,9 +15,12 @@ from openpyxl import load_workbook
 from filelock import FileLock
 
 # ========= CONFIG =========
-EXCEL_PATH = r"C:\Users\exion\Downloads\Teams.xlsx"
-SHEET_NAME = "Teams"
-TIMEZONE   = "Asia/Kolkata"  # IST
+# Excel kept inside ./assets for clarity. Deploy hosts have ephemeral FS;
+# keep a backup locally or switch to Google Sheets for multi-gate use.
+APP_DIR     = os.path.dirname(__file__)
+EXCEL_PATH  = os.path.join(APP_DIR, "assets", "Teams.xlsx")  # must exist; sheet must contain "Team ID"
+SHEET_NAME  = "Teams"
+TIMEZONE    = "Asia/Kolkata"  # IST
 REQUIRED_COLS = ["Token", "Entry Confirmed", "Check-in Time", "Check-in Gate"]
 # =========================
 
@@ -31,8 +35,9 @@ SCANNER_HTML = """
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Ticket Scanner</title>
 <style>
+  :root { --brand:#0F766E; --accent:#0EA5E9; }
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:#f6f7f9; }
-  header { background:#0F766E; color:#fff; padding:12px 16px; font-weight:700; }
+  header { background:var(--brand); color:#fff; padding:12px 16px; font-weight:700; }
   main { max-width:900px; margin:18px auto; padding:0 12px; }
   .card { background:#fff; padding:16px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.08); }
   .row { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
@@ -43,7 +48,7 @@ SCANNER_HTML = """
   .err { background:#fee2e2; color:#991b1b; border:1px solid #fecaca; }
   label { display:block; font-size:14px; color:#374151; margin-top:8px; }
   input, button { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; font-size:14px; }
-  button { background:#0EA5E9; color:white; border:0; cursor:pointer; font-weight:700; }
+  button { background:var(--accent); color:white; border:0; cursor:pointer; font-weight:700; }
   button:hover { filter:brightness(.95); }
   .grid { display:grid; grid-template-columns: 1fr; gap:10px; }
   .log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#111827; color:#e5e7eb; padding:10px; border-radius:10px; height:160px; overflow:auto; font-size:12px; }
@@ -257,5 +262,6 @@ def api_checkin():
 
 # ---------- main ----------
 if __name__ == "__main__":
-    # Tip: Pause OneDrive sync and keep Excel closed during check-in to avoid locks.
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Use platform port when deployed; default to 5000 locally.
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)

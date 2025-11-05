@@ -1,0 +1,7 @@
+flask==3.0.0
+gunicorn==21.2.0
+openpyxl
+filelock
+qrcode[pil]
+reportlab
+pillow
