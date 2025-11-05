@@ -1,5 +1,6 @@
 # scanner.py
-# Minimal deploy, prefers back camera, and lets user switch cameras.
+# Minimal deploy, prefers back camera, manual switch, NO gate UI, and
+# status text shows only check-in + time.
 
 import os
 from datetime import datetime
@@ -14,7 +15,7 @@ APP_DIR     = os.path.dirname(__file__)
 EXCEL_PATH  = os.path.join(APP_DIR, "assets", "Teams.xlsx")  # must exist; "Teams" sheet
 SHEET_NAME  = "Teams"
 TIMEZONE    = "Asia/Kolkata"
-REQUIRED_COLS = ["Token", "Entry Confirmed", "Check-in Time", "Check-in Gate"]
+REQUIRED_COLS = ["Token", "Entry Confirmed", "Check-in Time", "Check-in Gate"]  # Gate kept for compatibility; won't be used.
 # =========================
 
 app = Flask(__name__)
@@ -59,9 +60,7 @@ SCANNER_HTML = """
           <button id="btnSwitch">Switch</button>
         </div>
         <div id="reader"></div>
-        <div class="grid">
-          <label>Gate/Desk (optional)</label>
-          <input id="gate" placeholder="e.g., Main Gate A"/>
+        <div class="grid" style="margin-top:10px;">
           <label>Manual token (fallback)</label>
           <input id="manual" placeholder="Paste/enter token here"/>
           <button id="btnManual">Check-in Manually</button>
@@ -79,7 +78,6 @@ SCANNER_HTML = """
 <script>
 const statusBox   = document.getElementById('status');
 const logBox      = document.getElementById('log');
-const gateEl      = document.getElementById('gate');
 const manualEl    = document.getElementById('manual');
 const btnManual   = document.getElementById('btnManual');
 const cameraSel   = document.getElementById('cameraSelect');
@@ -99,12 +97,11 @@ function setStatus(kind, msg){
 async function checkin(token){
   if (inFlight) return;
   inFlight = true;
-  const gate = gateEl.value || '';
   try{
     const r = await fetch('/api/checkin', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ token, gate })
+      body: JSON.stringify({ token })  // no gate sent
     });
     let text = await r.text();
     let j = {};
@@ -113,10 +110,10 @@ async function checkin(token){
       const msg = j.message || text || 'Server error';
       setStatus('err', `❌ ${msg.trim()}`);
     } else if (j.status === 'ok') {
-      if (j.note) setStatus('ok', `✅ Checked in: Team ${j.team_id} at ${j.time} — ${j.note}`);
-      else setStatus('ok', `✅ Checked in: Team ${j.team_id} at ${j.time}`);
+      // ✅ Only check-in + time
+      setStatus('ok', `✅ Checked in at ${j.time}`);
     } else if (j.status === 'repeat') {
-      setStatus('warn', `⚠️ Already checked in: Team ${j.team_id} at ${j.time}`);
+      setStatus('warn', `⚠️ Already checked in at ${j.time}`);
     } else {
       setStatus('err', `❌ ${j.message || 'Invalid response'}`);
     }
@@ -158,24 +155,20 @@ async function startReader(deviceId){
       onScanSuccess,
       onScanFailure
     );
-    setStatus('ok', 'Camera running' + (deviceId ? ` (${deviceId.slice(0,8)}…)` : ''));
+    setStatus('ok', 'Camera running');
   } catch(e){
     setStatus('err', 'Failed to start camera. Try another option.');
   }
 }
 
 function pickRearCamera(list){
-  // Prefer labels with back/rear/environment
-  const pref = ['back','rear','environment','trás','arrière','后置','背面']; // include a few intl hints
+  const pref = ['back','rear','environment','trás','arrière','后置','背面'];
   const lc = txt => (txt || '').toLowerCase();
-  // Choose by label match
   for (const w of pref){
     const hit = list.find(c => lc(c.label).includes(w));
     if (hit) return hit.id;
   }
-  // Otherwise prefer the last camera (often rear on phones)
   if (list.length >= 2) return list[list.length - 1].id;
-  // Fallback to first
   return list[0]?.id || null;
 }
 
@@ -198,8 +191,6 @@ btnSwitch.onclick = async () => {
 
 (async function init(){
   try{
-    // On first call, some browsers hide labels until permission is granted.
-    // Request a quick temp permission by starting default camera and stopping immediately.
     const tmp = new Html5Qrcode("reader");
     let tmpId = (await Html5Qrcode.getCameras())[0]?.id;
     if (tmpId) { try { await tmp.start(tmpId, {fps:1}, ()=>{}, ()=>{}); } catch(e) {} }
@@ -238,10 +229,10 @@ def ensure_excel_columns(ws):
 
 def now_local_string():
     try:
-            tz = ZoneInfo(TIMEZONE)
-            return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+        tz = ZoneInfo(TIMEZONE)
+        return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
     except Exception:
-            return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def safe_save_workbook(wb, target_path: str):
     try:
@@ -268,7 +259,6 @@ def api_checkin():
     try:
         data = request.get_json(force=True, silent=True) or {}
         token = (data.get("token") or "").strip()
-        gate  = (data.get("gate")  or "").strip()
         if not token:
             return jsonify(status="error", message="No token provided"), 400
 
@@ -287,8 +277,8 @@ def api_checkin():
                 col_token   = header["Token"]
                 col_status  = header["Entry Confirmed"]
                 col_time    = header["Check-in Time"]
-                col_gate    = header["Check-in Gate"]
 
+                # find row by token
                 hit_row = None
                 for r in range(2, ws.max_row + 1):
                     cell_val = ws.cell(row=r, column=col_token).value
@@ -308,8 +298,6 @@ def api_checkin():
                 ws.cell(row=hit_row, column=col_status, value="Yes")
                 ts = now_local_string()
                 ws.cell(row=hit_row, column=col_time, value=ts)
-                if gate:
-                    ws.cell(row=hit_row, column=col_gate, value=gate)
 
                 result = safe_save_workbook(wb, EXCEL_PATH)
                 payload = {"status": "ok", "team_id": team_id, "time": ts}
