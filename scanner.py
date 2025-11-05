@@ -196,10 +196,7 @@ SCANNER_HTML = """
 
 <footer>© DevBraze Club — REVA University</footer>
 
-<!-- Optional sounds (if present in /assets) -->
-<audio id="sound-ok"     src="/assets/success.mp3" preload="auto"></audio>
-<audio id="sound-repeat" src="/assets/repeat.mp3"  preload="auto"></audio>
-<audio id="sound-error"  src="/assets/error.mp3"   preload="auto"></audio>
+
 
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
