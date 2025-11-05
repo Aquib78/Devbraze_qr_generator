@@ -1,6 +1,6 @@
 # scanner.py
-# DevBraze QR Scanner — polished UI, rear camera preference, manual switch,
-# flash animations + optional sound feedback (assets/*), no gate field.
+# DevBraze QR Scanner — polished UI + fixed camera frame clipping (no overlay bleed),
+# rear camera preference, manual switch, optional sounds, no gate field.
 
 import os
 from datetime import datetime
@@ -16,7 +16,7 @@ ASSETS_DIR  = os.path.join(APP_DIR, "assets")
 EXCEL_PATH  = os.path.join(ASSETS_DIR, "Teams.xlsx")  # must exist; sheet "Teams"
 SHEET_NAME  = "Teams"
 TIMEZONE    = "Asia/Kolkata"
-REQUIRED_COLS = ["Token", "Entry Confirmed", "Check-in Time", "Check-in Gate"]  # Gate kept only for compatibility
+REQUIRED_COLS = ["Token", "Entry Confirmed", "Check-in Time", "Check-in Gate"]  # Gate kept for compatibility
 # =========================
 
 app = Flask(__name__)
@@ -65,16 +65,33 @@ SCANNER_HTML = """
   .left { min-width:320px; }
   .right { flex:1; min-width:300px; display:flex; flex-direction:column; }
 
-  /* Camera frame with gradient border */
+  /* Camera frame with gradient border that CLIPS inner content (fixes overlay bleed) */
   #reader {
-    width: 420px; max-width:100%;
-    border: 3px solid transparent;
+    position: relative;
+    width: 420px;                 /* camera box width (auto on mobile via max-width) */
+    max-width: 100%;
     border-radius: 16px;
-    background: linear-gradient(white, white) padding-box,
-                linear-gradient(90deg, var(--brand), var(--accent)) border-box;
-    padding:6px;
+    overflow: hidden;             /* clip inner video/overlay corners */
+    background: #fff;             /* inner background */
     box-shadow: 0 8px 24px rgba(14,165,233,0.18);
   }
+  /* Gradient border without using padding (prevents overlay from escaping) */
+  #reader::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 3px;                 /* border thickness */
+    background: linear-gradient(90deg, var(--brand), var(--accent));
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+  }
+  /* Ensure nested canvases also clip */
+  #reader > * { position: relative; border-radius: inherit; overflow: hidden; }
 
   /* Controls */
   .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
@@ -279,12 +296,25 @@ async function stopReader(){
   }
 }
 
+/* Compute a qrbox that fits INSIDE the rounded frame so the guides don't hit the border */
+function computeQrbox() {
+  const el = document.getElementById('reader');
+  const w = el.getBoundingClientRect().width;
+  const margin = 32;                                // safe margin from edges
+  return Math.max(180, Math.min(340, Math.floor(w - margin)));
+}
+
 async function startReader(deviceId){
   await stopReader();
   reader = new Html5Qrcode("reader");
   currentId = deviceId;
   try{
-    await reader.start(deviceId, { fps: 10, qrbox: 280 }, onScanSuccess, onScanFailure);
+    await reader.start(
+      deviceId,
+      { fps: 10, qrbox: computeQrbox() },           // dynamic qrbox
+      onScanSuccess,
+      onScanFailure
+    );
     setStatus('ok', 'Camera running');
   } catch(e){
     setStatus('err', 'Failed to start camera. Try another option.');
@@ -348,6 +378,14 @@ btnSwitch.onclick = async () => {
     loading.style.display = 'none';
   }
   updateStats();
+
+  // Recompute qrbox on resize for better fit
+  window.addEventListener('resize', () => {
+    // best-effort: if running, restart with new qrbox (lightweight on mobile)
+    if (currentId && reader) {
+      startReader(currentId);
+    }
+  });
 })();
 </script>
 </body>
@@ -429,7 +467,7 @@ def api_checkin():
                         hit_row = r
                         break
                 if not hit_row:
-                    return jsonify(status="error", message="Invalid token"), 404
+                  return jsonify(status="error", message="Invalid token"), 404
 
                 team_id = (str(ws.cell(row=hit_row, column=1).value or "").strip())
                 current = (str(ws.cell(row=hit_row, column=col_status).value or "").strip())
